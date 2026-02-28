@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Absolute System | Clicker & Ranks</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root { --bg: #0d1117; --card: #161b22; --border: #30363d; --blue: #6366f1; --text: #c9d1d9; --gold: #fcc419; }
+        body { background-color: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; margin: 0; display: flex; align-items: center; justify-content: center; min-height: 100vh; flex-direction: column; }
+        
+        .hidden { display: none !important; }
+        .glass-panel { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 25px; width: 90%; max-width: 500px; text-align: center; position: relative; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        
+        /* Ana Sayfa Butonu */
+        .home-btn {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: rgba(99, 102, 241, 0.1);
+            border: 1px solid var(--blue);
+            color: var(--blue);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.3s;
+            text-decoration: none;
+        }
+        .home-btn:hover { background: var(--blue); color: white; box-shadow: 0 0 10px var(--blue); }
+
+        /* Oyun Alanı */
+        #score-display { font-size: 3.5rem; font-weight: 800; color: white; margin: 10px 0; }
+        .main-btn { 
+            width: 130px; height: 130px; border-radius: 50%; border: 4px solid var(--blue); 
+            background: transparent; color: white; font-weight: 800; cursor: pointer;
+            transition: 0.1s; box-shadow: 0 0 15px rgba(99,102,241,0.2); margin: 20px;
+            outline: none;
+        }
+        .main-btn:active { transform: scale(0.9); background: var(--blue); }
+
+        /* Başarımlar */
+        .achievement-tag { 
+            display: inline-block; padding: 5px 10px; border-radius: 5px; font-size: 0.7rem; 
+            margin: 2px; border: 1px solid var(--border); background: #0d1117; color: #555;
+        }
+        .unlocked { border-color: var(--gold); color: var(--gold); box-shadow: 0 0 8px rgba(252, 196, 25, 0.3); }
+
+        /* Liderlik Tablosu */
+        .leaderboard { margin-top: 25px; text-align: left; border-top: 1px solid var(--border); padding-top: 15px; }
+        .leader-item { display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #21262d; font-size: 0.9rem; align-items: center; }
+        .rank-1 { background: rgba(252, 196, 25, 0.05); color: var(--gold); font-weight: bold; border-radius: 8px; }
+    </style>
+</head>
+<body>
+
+<div id="auth-check" class="glass-panel">
+    <h2 style="color:#ff4d4d;">ERİŞİM ENGELLENDİ</h2>
+    <p>Sıralamaya girmek için Absolute System hesabınla giriş yapmalısın.</p>
+    <a href="https://kuzeymurt00-blip.github.io/Website/" class="home-btn">ANA SAYFA</a>
+</div>
+
+<div id="game-content" class="glass-panel hidden">
+    <a href="https://kuzeymurt00-blip.github.io/Website/" class="home-btn">ANA SAYFA</a>
+
+    <h2 id="user-title" style="margin:0; color:var(--blue); font-weight: 800;">YÜKLENİYOR...</h2>
+    <div id="score-display">0</div>
+    <button class="main-btn" id="click-btn">TIKLA</button>
+
+    <div id="achievements-area">
+        <span id="ach-1k" class="achievement-tag">1K TIK</span>
+        <span id="ach-1m" class="achievement-tag">1M TIK</span>
+        <span id="ach-1b" class="achievement-tag">1B TIK</span>
+    </div>
+
+    <div class="leaderboard">
+        <h4 style="margin:0 0 10px 0; color: white;">🏆 GLOBAL SIRALAMA (Top 5)</h4>
+        <div id="leader-list"></div>
+    </div>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+    import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, collection, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyC29HXKSTcXx5-BuLrt6h8iH4BUh3jnNes",
+        authDomain: "absolutebisite.firebaseapp.com",
+        projectId: "absolutebisite",
+        storageBucket: "absolutebisite.firebasestorage.app",
+        messagingSenderId: "648450986989",
+        appId: "1:648450986989:web:17ff5e9a4ffd1577354de4",
+        measurementId: "G-EXPBEZ198Z"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    let currentUser = null;
+    let userData = { score: 0, achCount: 0, username: "OYUNCU" };
+
+    onAuthStateChanged(auth, async (user) => {
+        if (user) {
+            currentUser = user;
+            document.getElementById('auth-check').classList.add('hidden');
+            document.getElementById('game-content').classList.remove('hidden');
+            
+            // Kullanıcı ismini all_users koleksiyonundan çekiyoruz
+            const nameSnap = await getDoc(doc(db, "all_users", user.uid));
+            userData.username = nameSnap.exists() ? nameSnap.data().username : "OYUNCU";
+            document.getElementById('user-title').innerText = userData.username.toUpperCase();
+
+            // Kullanıcı verilerini anlık takip et
+            onSnapshot(doc(db, "clicker_stats", user.uid), (snap) => {
+                if (snap.exists()) {
+                    userData.score = snap.data().score || 0;
+                    userData.achCount = snap.data().achCount || 0;
+                    checkAchievements();
+                    renderUI();
+                } else {
+                    setDoc(doc(db, "clicker_stats", user.uid), { score: 0, achCount: 0, username: userData.username });
+                }
+            });
+
+            // Liderlik Tablosunu Dinle
+            const q = query(collection(db, "clicker_stats"), orderBy("achCount", "desc"), orderBy("score", "desc"), limit(5));
+            onSnapshot(q, (snap) => {
+                const list = document.getElementById('leader-list');
+                list.innerHTML = "";
+                snap.docs.forEach((doc, index) => {
+                    const d = doc.data();
+                    const isFirst = index === 0;
+                    list.innerHTML += `
+                        <div class="leader-item ${isFirst ? 'rank-1' : ''}">
+                            <span>${isFirst ? '👑 ' : '#' + (index+1)} ${d.username || 'Anonim'}</span>
+                            <span><b>${d.achCount}</b> Başarım / ${Math.floor(d.score).toLocaleString()}</span>
+                        </div>`;
+                });
+            });
+
+        } else {
+            document.getElementById('auth-check').classList.remove('hidden');
+            document.getElementById('game-content').classList.add('hidden');
+        }
+    });
+
+    function checkAchievements() {
+        let count = 0;
+        if (userData.score >= 1000) { document.getElementById('ach-1k').classList.add('unlocked'); count++; }
+        if (userData.score >= 1000000) { document.getElementById('ach-1m').classList.add('unlocked'); count++; }
+        if (userData.score >= 1000000000) { document.getElementById('ach-1b').classList.add('unlocked'); count++; }
+        
+        // Sadece başarım sayısı arttıysa veritabanına yaz
+        if (count > userData.achCount) {
+            userData.achCount = count;
+            saveData();
+        }
+    }
+
+    function renderUI() {
+        document.getElementById('score-display').innerText = Math.floor(userData.score).toLocaleString();
+    }
+
+    document.getElementById('click-btn').addEventListener('click', () => {
+        if (!currentUser) return;
+        userData.score += 1;
+        renderUI();
+        checkAchievements();
+        // Her 20 tıkta bir buluta yedekle
+        if (userData.score % 20 === 0) saveData();
+    });
+
+    async function saveData() {
+        if (currentUser) {
+            await updateDoc(doc(db, "clicker_stats", currentUser.uid), {
+                score: userData.score,
+                achCount: userData.achCount,
+                username: userData.username
+            });
+        }
+    }
+</script>
+</body>
+</html>
